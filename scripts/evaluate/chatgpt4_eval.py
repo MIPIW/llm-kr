@@ -5,11 +5,11 @@ import re
 
 openai.api_key = ####'api key'
 
-df = pd.read_excel("chatgpt4_0624.xlsx")
+df = pd.read_excel("chatgpt4_0711.xlsx")
 
-def evaluate_generations(prompt, response_a, response_b, response_c, response_d):
+def evaluate_generations(prompt, response_a, response_b, response_c, response_d, response_e, response_f):
     evaluation_prompt = f"""
-    Please strictly evaluate the performance of three generative models using qualitative evaluation. Provide the fluency, relevance, and accuracy score of model A, B, C, and D.
+    Please strictly evaluate the performance of three generative models using qualitative evaluation. Provide the fluency, relevance, and accuracy score of model A, B, C, D, E, and F.
 
     \textbf{{Fluency Rubric:}}
     \begin{{itemize}}
@@ -48,6 +48,10 @@ def evaluate_generations(prompt, response_a, response_b, response_c, response_d)
 
     \textbf{{D:}} {response_d}
     
+    \textbf{{E:}} {response_e}
+    
+    \textbf{{F:}} {response_f}
+    
     Deduct fluency points if the model generates output in a different language from the prompt.
     """
 
@@ -70,7 +74,9 @@ for idx, row in df.iterrows():
     response_b = row['B']
     response_c = row['C']
     response_d = row['D']
-    evaluation_result = evaluate_generations(prompt, response_a, response_b, response_c, response_d)
+    response_e = row['E']
+    response_f = row['F']
+    evaluation_result = evaluate_generations(prompt, response_a, response_b, response_c, response_d, response_e, response_f)
     results.append(evaluation_result)
 
 
