@@ -91,20 +91,23 @@ def get_prompt_info(prompt_path):
     return categories, attributes, completions, prompts
 
 
-def get_inference_examples(model, tokenizer, prompts, device, gen_config):
+def get_inference_examples(model, tokenizer, prompts, device, gen_config, flag_chat_template):
     # instruction tuning 모델 평가할 때 -> apply chat template 적용하기
     # https://huggingface.co/docs/transformers/main/en/internal/tokenization_utils#transformers.PreTrainedTokenizerBase.apply_chat_template
     
     responses = []
-    flag_chat_template = gen_config["apply_chat_template"]
+    
     
     for prompt in tqdm(prompts):
         if not flag_chat_template: # for evaluating pretrained models
             inputs = tokenizer(prompt, return_tensors="pt", return_token_type_ids=False).to(device)
+            outputs = model.generate(**inputs, **gen_config)
+            
         else: # for evaluating instruction-tuned models
-            inputs = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_token_type_ids=False).to(device)
+            _prompt = [ {"role": "user", "content": prompt} ]
+            inputs = tokenizer.apply_chat_template(_prompt, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_token_type_ids=False).to(device)
+            outputs = model.generate(inputs, **gen_config)
         
-        outputs = model.generate(**inputs, **gen_config)
         response = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         responses.append(response)
         
@@ -138,7 +141,7 @@ def main():
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, required=True, help="path of the model to run inference on.")
-    parser.add_argument("--prompt_path", type=str, default="./prompt_240411.txt", help="path of the prompt to be used for inference.")
+    parser.add_argument("--prompt_path", type=str, default="./prompt_240711.txt", help="path of the prompt to be used for inference.")
     parser.add_argument("--output_path", type=str, help="path to save the output.")
     parser.add_argument("--max_length", type=int, default=256, help="'max_length' argument for generation config.")
     parser.add_argument("--max_new_tokens", type=int, default=128, help="'max_new_tokens' argument for generation config.")
@@ -147,9 +150,10 @@ def main():
     parser.add_argument("--top_k", type=int, default=5, help="'top_k' argument for generation config.")
     parser.add_argument("--top_p", type=float, default=1.0, help="'top_p' argument for generation config.")
     parser.add_argument("--no_repeat_ngram_size", type=int, default=0, help="'no_repeat_ngram_size' argument for generation config.")
-    parser.add_argument("--apply_chat_template", type=bool, default=False, help="'apply_chat_template' argument for generation config.")
+    parser.add_argument("--apply_chat_template", action="store_true", help="'apply_chat_template' argument for generation config.")
     parser.add_argument("--seed", type=int, default=42, help="random seed for reproducibility.")
     args = parser.parse_args()
+    print("args:", args)
     
     ### 1. 기본 설정
     set_seed(seed=args.seed) # 시드 고정
@@ -180,7 +184,6 @@ def main():
         "top_p": args.top_p,
         "top_k": args.top_k,
         "no_repeat_ngram_size": args.no_repeat_ngram_size,
-        "apply_chat_template": args.apply_chat_template
     }    
     config = {
         "model path": args.model_path,
@@ -201,7 +204,8 @@ def main():
     infos = get_prompt_info(args.prompt_path)
     prompts = infos[3]
     print("getting inference results...")
-    responses = get_inference_examples(model, tokenizer, prompts, device, gen_config)    
+    flag_chat_template = args.apply_chat_template # True if the model is instruction tuned, False otherwise
+    responses = get_inference_examples(model, tokenizer, prompts, device, gen_config, flag_chat_template)    
 
     ### 4. 정성평가용 엑셀 파일 생성
     print("saving xlsx file for evaluating inference results...")
