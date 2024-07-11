@@ -1,11 +1,27 @@
 import openai
 import pandas as pd
 import re
+from openai import OpenAI
+from tqdm import tqdm
 
 
-openai.api_key = ####'api key'
+client = OpenAI(
+    # defaults to os.environ.get("OPENAI_API_KEY")
+    api_key= # private api key
+)
+
+def chat_gpt(evaluation_prompt):
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You are a strict evaluator of the generative models."},
+            {"role": "user", "content": evaluation_prompt}
+        ]
+    )
+    return response.choices[0].message.content.strip()
 
 df = pd.read_excel("chatgpt4_0711.xlsx")
+df= df[:-1] # remove last line (= model info)
 
 def evaluate_generations(prompt, response_a, response_b, response_c, response_d, response_e, response_f):
     evaluation_prompt = f"""
@@ -55,20 +71,13 @@ def evaluate_generations(prompt, response_a, response_b, response_c, response_d,
     Deduct fluency points if the model generates output in a different language from the prompt.
     """
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are a strict evaluator of the generative models."},
-            {"role": "user", "content": evaluation_prompt}
-        ]
-    )
+    response = chat_gpt(evaluation_prompt)
 
-    return response['choices'][0]['message']['content']
+    return response
 
 results = []
 
-
-for idx, row in df.iterrows():
+for idx, row in tqdm(df.iterrows()):
     prompt = row['prompt']
     response_a = row['A']
     response_b = row['B']
@@ -79,8 +88,6 @@ for idx, row in df.iterrows():
     evaluation_result = evaluate_generations(prompt, response_a, response_b, response_c, response_d, response_e, response_f)
     results.append(evaluation_result)
 
-
 df['result'] = results
-
 
 df.to_excel("evaluation_results.xlsx", index=False)
