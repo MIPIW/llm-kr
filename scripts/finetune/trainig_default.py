@@ -58,8 +58,7 @@ def train(args):
 
 
     dataset = load_dataset('csv', delimiter = ',', data_files = {'train' : [args.instruction_datasets], 'validation' : [args.instruction_datasets]}, keep_default_na=False)
-    train_dataset = dataset['train'].select(range(int(len(dataset['train'])*0.95)))
-    eval_dataset = dataset['validation'].select(range(int(len(dataset['train'])*0.95), len(dataset['train'])))
+    train_dataset = dataset['train']
     # Loading Dataset
     ## Train Dataset
     
@@ -107,7 +106,6 @@ def train(args):
             hf_model,
         training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
         formatting_func = preprocess_function,
         max_seq_length = 2048,
         tokenizer=tokenizer,
@@ -155,5 +153,3 @@ if __name__ == "__main__":
     args.output_dir = f"{args.output_dir}"
 
     train(args)
-
-
