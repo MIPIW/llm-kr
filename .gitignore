@@ -1,0 +1,2 @@
+outputs/checkpoints
+scripts/finetune/training_lora.ipynb
