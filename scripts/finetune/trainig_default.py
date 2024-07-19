@@ -34,20 +34,48 @@ def get_model_and_tokenizer(args) -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
 
     # Load tokenizer
     # accelerator = Accelerator(gradient_accumulation_steps=256)
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    if args.model == "Qwen/Qwen2-7B-Instruct":
+        path = (
+            "../../outputs/checkpoints/Qwen/Qwen2-7B-Instruct/default/checkpoint-2500"
+        )
+        hf_model = AutoModelForCausalLM.from_pretrained(
+            path,
+            device_map="auto",
+            trust_remote_code=True,
+            attn_implementation="flash_attention_2",
+        )
+        tokenizer = AutoTokenizer.from_pretrained(path)
 
-    if "Llama-3" in args.model:
-        tokenizer.pad_token = tokenizer.pad_token
-        tokenizer.add_special_tokens({"pad_token": "<pad>"})
+    elif args.model == "google/gemma-2-9b-it":
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
 
-    # Load huggingface model
-    hf_model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        device_map="auto",
-        trust_remote_code=True,
-        attn_implementation="flash_attention_2",
-    )
-    hf_model.resize_token_embeddings(len(tokenizer))
+        if "Llama-3" in args.model:
+            tokenizer.pad_token = tokenizer.pad_token
+            tokenizer.add_special_tokens({"pad_token": "<pad>"})
+
+        # Load huggingface model
+        hf_model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            device_map="auto",
+            trust_remote_code=True,
+            attn_implementation="eager",
+        )
+        hf_model.resize_token_embeddings(len(tokenizer))
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(args.model)
+
+        if "Llama-3" in args.model:
+            tokenizer.pad_token = tokenizer.pad_token
+            tokenizer.add_special_tokens({"pad_token": "<pad>"})
+
+        # Load huggingface model
+        hf_model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            device_map="auto",
+            trust_remote_code=True,
+            attn_implementation="flash_attention_2",
+        )
+        hf_model.resize_token_embeddings(len(tokenizer))
 
     return hf_model, tokenizer
 
@@ -149,7 +177,10 @@ def train(args):
         data_collator=collator_fn,
     )
 
-    trainer.train()
+    if args.model == "Qwen/Qwen2-7B-Instruct":
+        trainer.train(resume_from_checkpoint=True)
+    else:
+        trainer.train()
 
 
 def seed_everything(seed):

@@ -1,0 +1,57 @@
+{
+  "results": {
+    "kobest_boolq": {
+      "acc": 0.6274928774928775,
+      "acc_stderr": 0.012907521446784632,
+      "macro_f1": 0.5716333356084908,
+      "macro_f1_stderr": 0.013668516940259827
+    },
+    "kobest_copa": {
+      "acc": 0.627,
+      "acc_stderr": 0.015300493622922812,
+      "macro_f1": 0.6263090454249909,
+      "macro_f1_stderr": 0.015347429306353216
+    },
+    "kobest_hellaswag": {
+      "acc": 0.424,
+      "acc_stderr": 0.022122993778135404,
+      "acc_norm": 0.52,
+      "acc_norm_stderr": 0.022365160424231336,
+      "macro_f1": 0.42173204939435516,
+      "macro_f1_stderr": 0.022068145269935256
+    },
+    "kobest_sentineg": {
+      "acc": 0.6297229219143576,
+      "acc_stderr": 0.024265574168402054,
+      "macro_f1": 0.6293843076239164,
+      "macro_f1_stderr": 0.024335354404330854
+    },
+    "korunsmile": {
+      "f1": 0.4243991375097393,
+      "f1_stderr": 0.008562270361845932
+    },
+    "pawsx_ko": {
+      "acc": 0.5785,
+      "acc_stderr": 0.011044449507896282
+    }
+  },
+  "versions": {
+    "kobest_boolq": 0,
+    "kobest_copa": 0,
+    "kobest_hellaswag": 0,
+    "kobest_sentineg": 0,
+    "korunsmile": 0,
+    "pawsx_ko": 0
+  },
+  "config": {
+    "model": "hf-causal-experimental",
+    "model_args": "pretrained=Qwen/Qwen2-7B-Instruct,use_accelerate=true,trust_remote_code=true,peft=/home/hyohyeongjang/bigdata/ModelTrainer/llm-kr/outputs/checkpoints/Qwen/Qwen2-7B-Instruct/lora/checkpoint-4500",
+    "num_fewshot": 0,
+    "batch_size": "32",
+    "device": null,
+    "no_cache": true,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "description_dict": {}
+  }
+}
