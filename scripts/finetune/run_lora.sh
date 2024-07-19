@@ -13,7 +13,6 @@ python3 training_lora.py \
     --eval_batch_size 16 --epochs 1
 
 echo Qwen/Qwen2-7B-Instruct running
-
 python3 training_lora.py \
     --model Qwen/Qwen2-7B-Instruct \
     --train_batch_size 16 \
