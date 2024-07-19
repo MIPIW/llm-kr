@@ -5,8 +5,15 @@
 - evaluation for KOBEST, KLUE 등등 HAERAE 빼고 다
 - HAERAE는 evaluation2 폴더에서 돌리기
 
+- 장점: support multiple GPU
+- 단점: automatic batch size matching 기능 없음
+
+- HOWTO
 1. run_multiple.sh에 포맷 잘 맞춰서 올리고, 
 2. rum_all.sh에 필요한 거 적당히 수정해서 돌리기.
+
+- 참고:
+- batch size 32는 A100(80GB) * 3, 9B model 기준
 
 ```
 @software{eval-harness,
