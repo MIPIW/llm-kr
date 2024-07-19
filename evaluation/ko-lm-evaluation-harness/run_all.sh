@@ -14,7 +14,7 @@ MODEL=$1 #/home/beomi/coding-ssd2t/EasyLM/llama-2-ko-7b
 
 MODEL_PATH=$(echo $MODEL | awk -F/ '{print $(NF-3) "/" $(NF-2) "/" $(NF-1)}')
 
-echo "mkdir -p $RESULT_DIR/$MODEL_PATH/$CURRENT_TRAINED_TOKENS"
+echo "mkdir -p $RESULT_DIR/${MODEL_PATH}/${SUB_FOLDER}/"
 mkdir -p $RESULT_DIR/${MODEL_PATH}/${SUB_FOLDER}/
 
 if [ "$3" = "lora" ]; then
