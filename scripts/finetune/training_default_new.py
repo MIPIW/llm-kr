@@ -28,9 +28,9 @@ m.add_argument("--train_dataset", type=str, default="../datasets/oig-smallchip2-
 m.add_argument("--eval_dataset", type=str, default="../datasets/oig-smallchip2-dedu-slice_reviewed_week1-7_instruction_valid.csv", help="eval dataset")
 m.add_argument("--output_dir", type=str, default="../outputs/checkpoints", help="output directory for model checkpoint")
 
-h.add_argument("--train_batch_size", type=int, required=True, help="train batch size")
-h.add_argument("--eval_batch_size", type=int, required=True, help="eval batch size")
-h.add_argument("--epochs", type=int, required=True, help="train epochs")
+h.add_argument("--train_batch_size", type=int, default=8, help="train batch size")
+h.add_argument("--eval_batch_size", type=int, default=8, help="eval batch size")
+h.add_argument("--epochs", type=int, default=1, help="train epochs")
 h.add_argument("--gradient_accumulation_steps", type=int, default=1, help="gradient accumulation steps")
 h.add_argument("--learning_rate", type=float, default=3e-5, help="learning rate")
 h.add_argument("--lr_scheduler_type", type=str, default="linear", help="learning rate scheduler type")
