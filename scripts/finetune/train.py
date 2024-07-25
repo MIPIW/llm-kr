@@ -254,6 +254,7 @@ def set_sft_config():
         **sft_config_dict,                                      
         bf16=True,
         remove_unused_columns=True,
+        group_by_length=True,
         disable_tqdm=False
     )
 
@@ -367,7 +368,7 @@ def main():
         tokenizer=tokenizer,
         formatting_func=formatting_func,
         data_collator=data_collator,
-        max_seq_length=2048,
+        max_seq_length=1024,
         dataset_num_proc=args.num_proc,
     )
     
