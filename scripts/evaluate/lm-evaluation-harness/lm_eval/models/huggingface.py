@@ -702,6 +702,7 @@ class HFLM(TemplateLM):
                 test_batch = torch.ones(
                     (batch_size, max_length), device=self.device
                 ).long()
+
             for _ in range(5):
                 out = F.log_softmax(
                     self._model_call(test_batch, **call_kwargs), dim=-1
