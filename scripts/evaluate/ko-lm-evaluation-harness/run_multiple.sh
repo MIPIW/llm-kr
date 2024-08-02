@@ -15,5 +15,7 @@
 
 
 # sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/qwen2-7b/dora/checkpoint-1065' '0,1,2,3' 'lora' 'Qwen/Qwen2-7B-Instruct' 
-sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/llama3-8b/dora/checkpoint-1065' '0,1,2,3' 'lora' 'meta-llama/Meta-Llama-3-8B-Instruct'
-sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/gemma2-9b/dora/checkpoint-1065' '0,1,2,3' 'lora' 'google/gemma-2-9b-it' 
+# sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/llama3-8b/dora/checkpoint-1065' '0,1,2,3' 'lora' 'meta-llama/Meta-Llama-3-8B-Instruct'
+# sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/gemma2-9b/dora/checkpoint-1065' '0,1,2,3' 'lora' 'google/gemma-2-9b-it' 
+
+sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/llama3.1-8b/dora/checkpoint-1065/' '0,1,2,3' 'lora' 'meta-llama/Meta-Llama-3.1-8B-Instruct' 
