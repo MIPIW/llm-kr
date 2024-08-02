@@ -3,9 +3,9 @@
 export CUDA_VISIBLE_DEVICES=$2
 export TOKENIZERS_PARALLELISM=false
 
-RESULT_DIR='../../outputs/benchmarks/all'
-TASKS='kobest_hellaswag,kobest_copa,kobest_boolq,kobest_sentineg,klue_nli,klue_sts,klue_ynat,kohatespeech,kohatespeech_gen_bias,korunsmile,nsmc,pawsx_ko'
-# TASKS='kobest_hellaswag,kobest_copa,kobest_boolq,kobest_sentineg,korunsmile,pawsx_ko'
+RESULT_DIR='../../../outputs/benchmarks/all'
+# TASKS='kobest_hellaswag,kobest_copa,kobest_boolq,kobest_sentineg,klue_nli,klue_sts,klue_ynat,kohatespeech,kohatespeech_gen_bias,korunsmile,nsmc,pawsx_ko'
+TASKS='kobest_hellaswag,kobest_copa,kobest_boolq,kobest_sentineg,korunsmile,pawsx_ko'
 SUB_FOLDER=$5
 
 GPU_NO=0

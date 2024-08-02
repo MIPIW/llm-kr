@@ -2,10 +2,10 @@
 # export CUDA_VISIBLE_DEVICES=$2 # 어차피 하나로 돌릴 거임
 export TOKENIZERS_PARALLELISM=false
 
-RESULT_DIR='../../outputs/benchmarks/all'
+RESULT_DIR='../../../outputs/benchmarks/all'
 TASKS='haerae_general_knowledge,haerae_history,haerae_loan_word,haerae_rare_word,haerae_standard_nomenclature'
 MODEL=$1 #/home/beomi/coding-ssd2t/EasyLM/llama-2-ko-7b
-OUTPUT_PATH=$(echo $MODEL | awk -F/ '{print $(NF-3) "/" $(NF-2) "/" $(NF-1)}')
+MODEL_PATH=$(echo $MODEL | awk -F/ '{print $(NF-3) "/" $(NF-2) "/" $(NF-1)}')
 SUB_FOLDER=$4
 
 LORA="lora"
