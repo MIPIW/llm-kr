@@ -1,3 +1,4 @@
 outputs/checkpoints/*
 scripts/finetune/training_lora.ipynb
 data/oig-smallchip2*
+data/*
