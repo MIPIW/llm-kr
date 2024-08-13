@@ -55,6 +55,7 @@ h.add_argument("--train_batch_size", type=int, default=8, help="train batch size
 h.add_argument("--eval_batch_size", type=int, default=8, help="eval batch size")
 h.add_argument("--epochs", type=int, default=1, help="# of train epochs")
 h.add_argument("--gradient_accumulation_steps", type=int, default=1, help="gradient accumulation steps")
+h.add_argument("--max_sequence_length", type=int, default=2048, help="max sequence length")
 
 p.add_argument("--peft_type", type=str, default="no", choices=["no", "lora", "dora"], help="whether to use LoRA or DoRA; defaults to 'no'")
 p.add_argument("--lora_rank", type=int, default=8, help="rank for LoRA")
@@ -295,7 +296,8 @@ def set_sft_config():
         sft_config_dict["logging_strategy"] = "steps"
         sft_config_dict["logging_steps"] = 1
         sft_config_dict["report_to"] = "wandb"
-        sft_config_dict["run_name"] = f"{args.model}-it"
+        data_switch = "switch-" if len(args.train_dataset) > 1 else ""
+        sft_config_dict["run_name"] = f"{args.peft_type}-{args.lr_scheduler_type}-{data_switch}it"
     else:
         # add log settings    
         sft_config_dict["logging_strategy"] = args.logging_strategy
@@ -419,7 +421,7 @@ def main():
 
     if args.report_to_wandb:
         wandb.login()
-        os.environ["WANDB_PROJECT"]=f"bigdata-{args.model}-it"
+        os.environ["WANDB_PROJECT"] = f"bigdata-{args.model}-it"
     
 
     ### Loading datasets
@@ -436,7 +438,7 @@ def main():
         "qwen2-7b": "Qwen/Qwen2-7B-Instruct"
     }
     model_path = arg2model[args.model]    
-    al tokenizer
+    global tokenizer
     tokenizer = get_tokenizer(model_path)
     
     
@@ -449,7 +451,7 @@ def main():
     # Loading task templates
 
     logger.info(f"Loading task templates from: {args.task_templates}")
-    al task_templates
+    global task_templates
     with open(args.task_templates, "r", encoding="utf-8") as f:
         task_templates = json.load(f)    
         
@@ -486,7 +488,7 @@ def main():
             model_path = arg2model[args.model]        
         else: # Load last checkpoint
             last_output = output_dir + f"/{i}of{lr_scheduler_loader.max_count}"
-            model_path = (f"{last_output}/checkpoint-*")[-1]
+            model_path = glob(f"{last_output}/checkpoint-*")[-1]
 
         global model
         model = get_model(args.peft_type, model_path, i+1)        
@@ -512,7 +514,7 @@ def main():
             formatting_func=formatting_func,
             data_collator=data_collator,
             optimizers=(optimizer, lr_scheduler),
-            max_seq_length=1024,
+            max_seq_length=args.max_sequence_length,
             dataset_num_proc=args.num_proc,
         )
         trainer.args.output_dir = output_dir + f"/{i+1}of{lr_scheduler_loader.max_count}"
