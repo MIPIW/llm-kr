@@ -13,7 +13,6 @@ from datetime import datetime
 from datetime import timedelta
 from shutil import rmtree
 
-import wandb
 import torch
 from trl import SFTConfig
 from trl import SFTTrainer
@@ -39,8 +38,7 @@ print(f"[{timestamp.strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]}] Initializing")
 parser = argparse.ArgumentParser(description="Instruction-Tuning")
 m = parser.add_argument_group("Main Settings")
 h = parser.add_argument_group("Hyperparameters")
-p = parser.add_argument_group("PEFT Configs")
-l = p = parser.add_argument_group("Optimizer and Learning Rate Scheduler Configs")
+l = parser.add_argument_group("LoRA Configs")
 s = parser.add_argument_group("Save Settings")
 e = parser.add_argument_group("Evaluation Settings")
 o = parser.add_argument_group("Other Settings")
@@ -55,22 +53,18 @@ h.add_argument("--train_batch_size", type=int, default=8, help="train batch size
 h.add_argument("--eval_batch_size", type=int, default=8, help="eval batch size")
 h.add_argument("--epochs", type=int, default=1, help="# of train epochs")
 h.add_argument("--gradient_accumulation_steps", type=int, default=1, help="gradient accumulation steps")
-h.add_argument("--max_sequence_length", type=int, default=2048, help="max sequence length")
+h.add_argument("--learning_rate", type=float, default=3e-5, help="learning rate")
+h.add_argument("--lr_scheduler_type", type=str, default="linear", help="learning rate scheduler type")
+h.add_argument("--warmup_ratio", type=float, default=0.0, help="warmup ratio of learning rate")
+h.add_argument("--warmup_steps", type=int, default=0, help="warmup steps of learning rate, overrides warmup_ratio if provided")
+h.add_argument("--weight_decay", type=float, default=0.01, help="weight decay for AdamW optimizer")
+h.add_argument("--adam_epsilon", type=float, default=1e-8, help="epsilon(ε) for AdamW optimizer")
 
-p.add_argument("--peft_type", type=str, default="no", choices=["no", "lora", "dora"], help="whether to use LoRA or DoRA; defaults to 'no'")
-p.add_argument("--lora_rank", type=int, default=8, help="rank for LoRA")
-p.add_argument("--lora_alpha", type=int, default=32, help="lora_alpha for LoRA")
-p.add_argument("--lora_dropout", type=float, default=0.1, help="dropout probability for LoRA")
-p.add_argument("--lora_target", type=str, default="all", choices=["all", "no_qk", "no_v", "no_qkv"], help="target modules to apply LoRA; defaults to 'all'")
-
-l.add_argument("--learning_rate", type=float, default=3e-5, help="learning rate")
-l.add_argument("--lr_scheduler_type", type=str, default="linear", help="learning rate scheduler type")
-l.add_argument("--warmup_ratio", type=float, default=0.0, help="ratio of learning rate warmup steps to total steps")
-l.add_argument("--warmup_steps", type=int, default=0, help="learning rate warmup steps, overwrites warmup ratio if set")
-l.add_argument("--min_lr_ratio", type=float, default=0.0, help="ratio of minimum learning rate to original learning rate")
-l.add_argument("--min_lr", type=float, default=0.0, help="minimum learning rate, overwrites minimun learning rate ratio if set")
-l.add_argument("--weight_decay", type=float, default=0.01, help="weight decay for AdamW optimizer")
-l.add_argument("--adam_epsilon", type=float, default=1e-8, help="epsilon(ε) for AdamW optimizer")
+l.add_argument("--lora_type", type=str, default="no", choices=["no", "lora", "dora"], help="whether to use LoRA or DoRA; defaults to 'no'")
+l.add_argument("--lora_rank", type=int, default=8, help="rank for LoRA")
+l.add_argument("--lora_alpha", type=int, default=32, help="lora_alpha for LoRA")
+l.add_argument("--lora_dropout", type=float, default=0.1, help="dropout probability for LoRA")
+l.add_argument("--lora_target", type=str, default="all", choices=["all", "no_qk", "no_v", "no_qkv"], help="target modules to apply LoRA; defaults to 'all'")
 
 s.add_argument("--save_strategy", type=str, default="steps", choices=["no", "steps", "epoch"], help="save strategy")
 s.add_argument("--save_steps", type=int, default=500, help="save steps")
@@ -85,7 +79,6 @@ e.add_argument("--eval_accumulation_steps", type=int, default=None, help="eval a
 
 o.add_argument("--logging_strategy", type=str, default="steps", choices=["no", "steps", "epoch"], help="logging strategy")
 o.add_argument("--logging_steps", type=int, default=500, help="logging steps")
-o.add_argument("--report_to_wandb", action="store_true", help="whether to report logs to wandb, overwrite logging settings if set")
 o.add_argument("--num_proc", type=int, default=8, help="# of processors to be used")
 o.add_argument("--seed", type=int, default=42, help="random seed for random, numpy, torch")
 
@@ -94,7 +87,7 @@ args = parser.parse_args()
 
 ### Setting Logger  
 
-output_dir = f"{args.output_dir}/{args.model}/{args.peft_type}"
+output_dir = f"{args.output_dir}/{args.model}/{args.lora_type}"
 if not os.path.isdir(output_dir):
     os.makedirs(output_dir, exist_ok=True)    
     
@@ -113,7 +106,7 @@ filer.setFormatter(formatter)
 filer.setLevel(logging.DEBUG)   
 logger.addHandler(filer)    
 
-logger.info("Logger is prepared")
+logger.info("Logger prepared")
 logger.info(f"Logs will be documented to: {filer.baseFilename}")
 
 
@@ -191,7 +184,7 @@ def set_lora_config():
         pass
     
     lora_config_dict = {
-        "use_dora": True if args.peft_type == "dora" else False,
+        "use_dora": True if args.lora_type == "dora" else False,
         "r": args.lora_rank,
         "lora_alpha": args.lora_alpha,
         "lora_dropout": args.lora_dropout,
@@ -211,23 +204,13 @@ def set_lora_config():
     return lora_config
 
 
-def get_tokenizer(model_path):
+def get_model_and_tokenizer(lora_type, model_path):
 
-    logger.info(f"Loading tokenizer from: {model_path}")
+    logger.info(f"Loading base model & tokenizer from: {model_path}")
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({"pad_token": "<pad>"}) # Llama3 doesn't have pad_token
-
-    return tokenizer
-
-
-def get_model(peft_type, model_path, load_count):
-
-    if load_count < 2 :
-        logger.info(f"Loading base model from: {model_path}")
-    else:
-        logger.info(f"Loading checkpoint from: {model_path}")
     
     # no flash attention 2 only for Gemma
     attn_implementation = "eager" if model_path == "google/gemma-2-9b-it" else "flash_attention_2"
@@ -241,21 +224,20 @@ def get_model(peft_type, model_path, load_count):
     model.resize_token_embeddings(len(tokenizer))
     
     # set LoRA config if needed    
-    if not peft_type == "no":
+    if not lora_type == "no":
         logger.info("Setting LoRA configuration")
         peft_config = set_lora_config()
         logger.info("Building PEFT model")
         model = get_peft_model(model, peft_config=peft_config)
-
-    if load_count < 2:
-        logger.debug("〓〓〓〓〓〓 Base Model Info. 〓〓〓〓〓〓")
-        logger.debug(f"- model name or path: {model_path}")
-        logger.debug(f"- peft type: {peft_type}")
-        for message in get_trainable_parameters(model):
-            logger.debug(message)
-        logger.debug("〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓")    
+        
+    logger.debug("〓〓〓〓〓〓 Model Settings 〓〓〓〓〓〓")
+    logger.debug(f"- model name or path: {model_path}")
+    logger.debug(f"- lora type: {lora_type}")
+    for message in get_trainable_parameters(model):
+        logger.debug(message)
+    logger.debug("〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓")    
     
-    return model
+    return model, tokenizer, attn_implementation
 
 
 def set_sft_config():
@@ -289,24 +271,14 @@ def set_sft_config():
     else:
         sft_config_dict["eval_steps"] = args.eval_steps
         sft_config_dict["eval_accumulation_steps"] = args.eval_accumulation_steps
-
-    # add wandb setting
-    if args.report_to_wandb:
-        logger.warning("'report_to_wandb' is set to True, 'logging_strategy' and 'logging_steps' will be overwritten with 'steps' and 1.")
-        sft_config_dict["logging_strategy"] = "steps"
-        sft_config_dict["logging_steps"] = 1
-        sft_config_dict["report_to"] = "wandb"
-        data_switch = "switch-" if len(args.train_dataset) > 1 else ""
-        sft_config_dict["run_name"] = f"{args.peft_type}-{args.lr_scheduler_type}-{data_switch}it"
+    
+    # add log settings
+    sft_config_dict["logging_strategy"] = args.logging_strategy
+    if args.save_strategy == "no":
+        logger.warning("'logging_strategy' is set to 'no', no log will be documented during training.")
     else:
-        # add log settings    
-        sft_config_dict["logging_strategy"] = args.logging_strategy
-        if args.logging_strategy == "no":
-            logger.warning("'logging_strategy' is set to 'no', no log will be documented during training.")
-        elif args.logging_strategy == "steps":
+        if args.logging_strategy == "steps":
             sft_config_dict["logging_steps"] = args.logging_steps
-        else: # args.logging_strategy == "epoch"
-            pass
     
     # add other settings
     sft_config_dict["dataloader_num_workers"] = args.num_proc
@@ -331,7 +303,6 @@ def set_sft_config():
 def get_lr_scheduler_loader(steps_list):
 
     total_steps = sum(steps_list)
-    min_lr_ratio = args.min_lr / args.learning_rate if args.min_lr > 0.0 else args.min_lr_ratio
     warmup_steps = args.warmup_steps if args.warmup_steps > 0 else math.ceil(args.warmup_ratio * total_steps)
 
     logger.info("Building lr_scheduler loader")
@@ -340,7 +311,6 @@ def get_lr_scheduler_loader(steps_list):
         learning_rate=args.learning_rate,
         optimizer_type="adamw",
         lr_scheduler_type=args.lr_scheduler_type,
-        min_lr_ratio=min_lr_ratio,
         warmup_steps=warmup_steps,
         weight_decay=args.weight_decay,
         eps=args.adam_epsilon
@@ -415,13 +385,6 @@ def main():
     ### Setting random seed
     
     set_seed(args.seed)
-
-
-    ### Wandb login if needed
-
-    if args.report_to_wandb:
-        wandb.login()
-        os.environ["WANDB_PROJECT"] = f"bigdata-{args.model}-it"
     
 
     ### Loading datasets
@@ -438,8 +401,8 @@ def main():
         "qwen2-7b": "Qwen/Qwen2-7B-Instruct"
     }
     model_path = arg2model[args.model]    
-    global tokenizer
-    tokenizer = get_tokenizer(model_path)
+    global model, tokenizer, attn_implementation
+    model, tokenizer, attn_implementation = get_model_and_tokenizer(args.lora_type, model_path)
     
     
     # Building data collator
@@ -478,33 +441,24 @@ def main():
 
         logger.info(f"◎ Training on dataset #{i+1} ◎")
 
-        if i < 1: # load base model
-            arg2model = {
-                "llama3-8b": "meta-llama/Meta-Llama-3-8B-Instruct",
-                "llama3.1-8b": "meta-llama/Meta-Llama-3.1-8B-Instruct",
-                "gemma2-9b": "google/gemma-2-9b-it",
-                "qwen2-7b": "Qwen/Qwen2-7B-Instruct"
-            }
-            model_path = arg2model[args.model]        
-        else: # Load last checkpoint
+        if i > 0: # replace model
             last_output = output_dir + f"/{i}of{lr_scheduler_loader.max_count}"
-            model_path = glob(f"{last_output}/checkpoint-*")[-1]
+            last_checkpoint = glob(f"{last_output}/checkpoint-*")[-1]
+            model = AutoModelForCausalLM.from_pretrained(
+                last_checkpoint,
+                device_map="balanced",
+                torch_dtype=torch.bfloat16,
+                trust_remote_code=True,
+                attn_implementation=attn_implementation
+            )
+            if not args.save_per_dataset:
+                rmtree(last_output)        
 
-        global model
-        model = get_model(args.peft_type, model_path, i+1)        
-        if i > 0 and not args.save_per_dataset: # Remove the last checkpoint if save_per_dataset=False
-            rmtree(last_output)
-
-        logger.info("Setting dataset")
         train_dataset = train_dataset_list[i]
-        eval_dataset = eval_dataset_list[i if len(eval_dataset_list) > 1 else 0] 
+        eval_dataset = eval_dataset_list[i if len(eval_dataset_list) > 1 else 0]
+        
+        optimizer, lr_scheduler = lr_scheduler_loader.get_optimizer_and_lr_scheduler(parameters=model.parameters())        
 
-        logger.info("Setting optimizer and learning rate scheduler")
-        optimizer, lr_scheduler = lr_scheduler_loader.get_optimizer_and_lr_scheduler(parameters=model.parameters())
-        lr_init = lr_scheduler.lr_lambdas[0](0)
-        logger.info(f"Initial learning rate of scheduler: {lr_init}")
-
-        logger.info("Building SFTTrainer")
         trainer = SFTTrainer(
             model=model,
             args=sft_config,
@@ -514,9 +468,10 @@ def main():
             formatting_func=formatting_func,
             data_collator=data_collator,
             optimizers=(optimizer, lr_scheduler),
-            max_seq_length=args.max_sequence_length,
+            max_seq_length=1024,
             dataset_num_proc=args.num_proc,
         )
+
         trainer.args.output_dir = output_dir + f"/{i+1}of{lr_scheduler_loader.max_count}"
 
         loop_start = time()
@@ -534,7 +489,7 @@ def main():
 
     plot_dir = f"{output_dir}/lr_scheduler_plot.jpg"
     logger.info(f"Saving lr_scheduler plot to: {plot_dir}")
-    lr_scheduler_loader.save_lr_scheduler_plot(plot_dir)
+    save_lr_scheduler_plot(plot_dir)
 
     
     logger.info("Done")
