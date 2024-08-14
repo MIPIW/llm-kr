@@ -13,6 +13,13 @@ from transformers import logging
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM
 
+from transformers import AutoModelForSeq2SeqLM
+from peft import PeftModel, PeftConfig
+
+from peft.config import PeftConfig
+from peft import PeftModelForCausalLM
+
+
 # pip install xlsxwriter --upgrade
 
 logging.set_verbosity_error()
@@ -44,13 +51,25 @@ def print_config(config):
     
 ########### 모델, 토크나이저 불러오기
 
-def load_model(model_path):
-    
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        torch_dtype=torch.bfloat16, 
-        low_cpu_mem_usage=True,
-        device_map="auto")
+def load_model(model_path, peft):
+    # flash attn: turned off to reduce inference time
+    if peft: # lora, dora
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        
+        config = PeftConfig.from_pretrained(model_path) # 훈련시킨 어댑터 로드 # LoraConfig
+        model = AutoModelForCausalLM.from_pretrained(
+            config.base_model_name_or_path, 
+            torch_dtype=torch.bfloat16,
+            device_map="auto")
+        model.resize_token_embeddings(len(tokenizer))
+        
+        model = PeftModelForCausalLM.from_pretrained(model, model_path)
+
+    else: # default (full finetuning)
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype=torch.bfloat16,
+            device_map="auto")
 
     setattr(model, 'model_parallel', True)
     setattr(model, 'is_parallelizable', True)
@@ -91,27 +110,105 @@ def get_prompt_info(prompt_path):
     return categories, attributes, completions, prompts
 
 
-def get_inference_examples(model, tokenizer, prompts, device, gen_config, flag_chat_template):
-    # instruction tuning 모델 평가할 때 -> apply chat template 적용하기
-    # https://huggingface.co/docs/transformers/main/en/internal/tokenization_utils#transformers.PreTrainedTokenizerBase.apply_chat_template
+
+class FormattingFunction:
+    def __init__(self, model_checkpoint):
+        self.model_mapping = { "gemma2-9b" : "google/gemma-2-9b-it",
+                       "llama3-8b" : "meta-llama/Meta-Llama-3-8B-Instruct", 
+                       "llama3.1-8b" : "meta-llama/Meta-Llama-3.1-8B-Instruct",
+                       "qwen2-7b" : "Qwen/Qwen2-7B-Instruct" }
+        
+        self.instruction_all = {
+            "meta-llama/Meta-Llama-3-8B-Instruct": """
+        <|begin_of_text|>
+        <|start_header_id|>system<|end_header_id|>
+        당신의 역할은 한국어로 답변하는 **한국어 AI 어시트턴트**입니다. 주어진 질문에 대해 한국어로 답변해주세요.<|eot_id|>
+        <|start_header_id|>user<|end_header_id|>
+        아래 질문을 한국어로 정확하게 답변해주세요. **질문**: {}<|eot_id|>
+        <|start_header_id|>assistant<|end_header_id|>\n\n""",
+            "google/gemma-2-9b-it": """
+        <bos><start_of_turn>model
+        당신의 역할은 한국어로 답변하는 **한국어 AI 어시트턴트**입니다. 주어진 질문에 대해 한국어로 답변해주세요.<end_of_turn>
+        <start_of_turn>user
+        아래 질문을 한국어로 정확하게 답변해주세요. **질문**: {}<end_of_turn>
+        <start_of_turn>model\n""",
+            "Qwen/Qwen2-7B-Instruct": """
+        <|im_start|>system
+        당신의 역할은 한국어로 답변하는 **한국어 AI 어시트턴트**입니다. 주어진 질문에 대해 한국어로 답변해주세요.\n<|im_end|>
+        <|im_start|>user
+        아래 질문을 한국어로 정확하게 답변해주세요. **질문**: {}<|im_end|>
+        <|im_start|>system\n""",
+             "meta-llama/Meta-Llama-3.1-8B-Instruct": """
+        <|start_header_id|>system<|end_header_id|>
+        당신의 역할은 한국어로 답변하는 **한국어 AI 어시트턴트**입니다. 주어진 질문에 대해 한국어로 답변해주세요.<|eot_id|>
+        <|start_header_id|>user<|end_header_id|>
+        아래 질문을 한국어로 정확하게 답변해주세요. **질문**: {}<|eot_id|>
+        <|start_header_id|>assistant<|end_header_id|>\n\n""",
+        }
+        
+        self.instruction = self.instruction_all[self.model_mapping[model_checkpoint]]
+
+    def __call__(self, prompt):
+        _prompt = self.instruction.format(prompt)
+        return _prompt
+
+
+def get_inference_examples(model, tokenizer, prompts, device, gen_config, flag_chat_template, format_model):
+    # one-by-one inference
     
     responses = []
     
-    
     for prompt in tqdm(prompts):
-        if not flag_chat_template: # for evaluating pretrained models
-            inputs = tokenizer(prompt, return_tensors="pt", return_token_type_ids=False).to(device)
+        # for evaluating instruction-tuned models
+        if format_model: # with template being provided
+            formattingfunction = FormattingFunction(format_model)
+            _prompt = formattingfunction(prompt)
+            inputs = tokenizer(_prompt, return_tensors="pt", return_token_type_ids=False).to(device)
             outputs = model.generate(**inputs, **gen_config)
             
-        else: # for evaluating instruction-tuned models
-            _prompt = [ {"role": "user", "content": prompt} ]
+        elif flag_chat_template: # without template given -> use chat template
+            _prompt = [ {"role": "user", "content": prompt} ]            
             inputs = tokenizer.apply_chat_template(_prompt, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_token_type_ids=False).to(device)
             outputs = model.generate(inputs, **gen_config)
-        
+            
+        else: # if not flag_chat_template: # for evaluating pretrained models
+            inputs = tokenizer(prompt, return_tensors="pt", return_token_type_ids=False).to(device)
+            outputs = model.generate(**inputs, **gen_config)
+
         response = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         responses.append(response)
         
-    return responses    
+    return responses
+
+
+def get_inference_examples_batch(model, tokenizer, prompts, device, gen_config, flag_chat_template, format_model):
+    responses = []
+    BATCH_SIZE = 10
+    
+    if format_model: # with template being provided
+        formattingfunction = FormattingFunction(format_model)
+        _prompts = [formattingfunction(item) for item in prompts ]
+        num_of_iteration = len(_prompts) // BATCH_SIZE
+        if len(_prompts) % BATCH_SIZE: # 자투리 남으면 추가로 iteration 돌리기
+            num_of_iteration += 1
+
+        for i in tqdm(range(num_of_iteration)):
+            start = i * BATCH_SIZE
+            _prompts_batch = _prompts[start : start + BATCH_SIZE] # batch size만큼 떼어오기
+            batched_inputs = tokenizer(_prompts_batch, return_tensors="pt", padding=True, return_token_type_ids=False).to(device)
+
+            with torch.no_grad():
+                # 언어모델로 inference
+                outputs = model.generate(**batched_inputs, **gen_config)
+
+                # 생성 결과 저장
+                for i, input_id in enumerate(batched_inputs['input_ids']):
+                    generated_tokens = outputs[i, len(input_id):] # 답변부분만 추출하여 print
+                    generated_text = tokenizer.decode(generated_tokens, skip_special_tokens=True)
+                    responses.append(generated_text)
+                    
+    return responses
+
 
     
 def save_inference_result(infos, config, responses, output_path):
@@ -150,7 +247,10 @@ def main():
     parser.add_argument("--top_k", type=int, default=5, help="'top_k' argument for generation config.")
     parser.add_argument("--top_p", type=float, default=1.0, help="'top_p' argument for generation config.")
     parser.add_argument("--no_repeat_ngram_size", type=int, default=0, help="'no_repeat_ngram_size' argument for generation config.")
-    parser.add_argument("--apply_chat_template", action="store_true", help="'apply_chat_template' argument for generation config.")
+    parser.add_argument("--apply_chat_template", action="store_true", help="'apply_chat_template' argument for input formatting.")
+    parser.add_argument("--format_model", type=str, help="argument for input formatting.")
+    parser.add_argument("--peft", action="store_true", help="'peft' argument used for loading a model")
+    
     parser.add_argument("--seed", type=int, default=42, help="random seed for reproducibility.")
     args = parser.parse_args()
     print("args:", args)
@@ -162,18 +262,23 @@ def main():
     date = datetime.now().strftime("%y%m%d")
     hub = True if not os.path.isdir(args.model_path) else False
     if hub:
-        model_name = os.path.split(args.model_path)[-1]        
+        model_name = os.path.split(args.model_path)[-1]      
     else:
         model_dir, checkpoint = os.path.split(args.model_path)
-        model_name = os.path.split(model_dir)[-1]
-        
-    if not args.output_path:
+        model_name =  "_".join(model_dir.split("/")[-2:]) # os.path.split(model_dir)[-1]
+        print("model_name:", model_name)
+    
+    if not args.output_path or args.output_path.endswith("/"):
         if hub:
             output_path = f"./inference_{model_name}_{date}.xlsx"
         else:
-            output_path = f"./inference_{model_name}_{checkpoint}_{date}.xlsx"        
-    elif args.output_path.endswith(".xlsx"):
-        output_path = args.output_path
+            output_path = f"./inference_{model_name}_{checkpoint}_{date}.xlsx"
+            
+        if args.output_path: # dir specified
+            output_path = args.output_path + output_path
+            
+    elif args.output_path.endswith(".xlsx"): # fname specified
+        output_path = args.output_path 
     else:
         raise ValueError("output file format should be set as '.xlsx'.")
     
@@ -194,7 +299,7 @@ def main():
     print_config(config)
     
     ### 2. 모델 & 토크나이저 로드
-    model = load_model(args.model_path)
+    model = load_model(args.model_path, args.peft)
     tokenizer = load_tokenizer(args.model_path)
     model.resize_token_embeddings(len(tokenizer))
     print("len(tokenizer):", len(tokenizer))    
@@ -204,8 +309,11 @@ def main():
     infos = get_prompt_info(args.prompt_path)
     prompts = infos[3]
     print("getting inference results...")
+    
     flag_chat_template = args.apply_chat_template # True if the model is instruction tuned, False otherwise
-    responses = get_inference_examples(model, tokenizer, prompts, device, gen_config, flag_chat_template)    
+    format_model = args.format_model
+    
+    responses = get_inference_examples_batch(model, tokenizer, prompts, device, gen_config, flag_chat_template, format_model)
 
     ### 4. 정성평가용 엑셀 파일 생성
     print("saving xlsx file for evaluating inference results...")
