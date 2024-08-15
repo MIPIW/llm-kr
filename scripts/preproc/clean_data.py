@@ -10,7 +10,6 @@ from datasets import load_dataset
 # Precompile the bad words regex pattern
 badwords_df = pd.read_excel("../badwords_collection_bw_opendict.xlsx")
 badwords = sorted(list(badwords_df["entry"]))
-badwords_re = re.compile(r"|".join([f"({word})" for word in badwords]))
 
 wer_metric = load("wer")
 
@@ -21,7 +20,10 @@ def has_honorific(text):
     return False
 
 def has_badwords(text):
-    return bool(badwords_re.search(text))
+    for bw in badwords:
+        if bw in text:
+            return True
+    return False
 
 def edit_distance(args):
     translated, inspected = args
