@@ -22,4 +22,9 @@
 
 # sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/switch/llama3.1-8b/no/2of2/checkpoint-116' '0,1,2,3' 'default' 'NULL' '2of2'
 # sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/switch/llama3-8b/no/2of2/checkpoint-116' '0,1,2,3' 'default' 'NULL' '2of2'
-sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/switch/qwen2-7b/dora/2of2/checkpoint-116' '0,1,2,3' 'lora' 'Qwen/Qwen2-7B-Instruct' '2of2' 
+# sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/switch/qwen2-7b/dora/2of2/checkpoint-116' '0,1,2,3' 'lora' 'Qwen/Qwen2-7B-Instruct' '2of2' 
+
+# sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/switch/gemma2-9b/no/2of2/checkpoint-116' '0,1,2,3' 'default' 'NULL' '2of2'
+# sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/switch/qwen2-7b/lora/2of2/checkpoint-116' '0,1,2,3' 'lora' 'Qwen/Qwen2-7B-Instruct' '2of2' 
+
+sh run_all.sh '/node_storage2/bigdata_IT_SFT/outputs/checkpoints/switch/qwen2-7b/no/2of2/checkpoint-116' '0,1,2,3' 'default' 'NULL' '2of2'

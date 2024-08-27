@@ -22,6 +22,7 @@ from peft import get_peft_model
 from datasets import load_dataset
 ##########################################ADDED###############################################
 from transformers.trainer import *
+##########################################ADDED###############################################
 
 """
 The Trainer class, to easily train a 🤗 Transformers from scratch or finetune it on a new task.
