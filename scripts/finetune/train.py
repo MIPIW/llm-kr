@@ -18,6 +18,7 @@ from trl import SFTConfig
 from trl import SFTTrainer
 from peft import PeftModel
 from peft import LoraConfig
+from peft import AdaLoraConfig
 from peft import get_peft_model
 from datasets import load_dataset
 ##########################################ADDED###############################################
@@ -311,7 +312,7 @@ s = parser.add_argument_group("Save Settings")
 e = parser.add_argument_group("Evaluation Settings")
 o = parser.add_argument_group("Other Settings")
 
-m.add_argument("--model", type=str, required=True, choices=["llama3-8b", "llama3.1-8b", "gemma2-9b", "qwen2-7b"], help="IT model type (required)")
+m.add_argument("--model", type=str, required=True, choices=["llama3-8b", "llama3.1-8b", "gemma2-9b", "qwen2-7b", "exaone3-7.8b"], help="IT model type (required)")
 m.add_argument("--train_dataset", type=str, nargs="+", default=["/node_storage2/data_llm_kr/data_it_rpd_train_240806.csv", "/node_storage2/data_llm_kr/data_it_qa_train_240806.csv"], help="train datasets, could be more than 1 (should be in format of csv)")
 m.add_argument("--eval_dataset", type=str, nargs="+", default=["/node_storage2/data_llm_kr/data_it_rpd_eval_240806.csv", "/node_storage2/data_llm_kr/data_it_qa_eval_240806.csv"], help="eval datasets, could be more than 1 (should be in format of csv)")
 m.add_argument("--task_templates", type=str, default="/node_storage2/data_llm_kr/instruction_template_240806.json", help="task template")
@@ -323,11 +324,12 @@ h.add_argument("--epochs", type=int, default=1, help="# of train epochs")
 h.add_argument("--gradient_accumulation_steps", type=int, default=128, help="gradient accumulation steps")
 h.add_argument("--max_sequence_length", type=int, default=1024, help="max sequence length")
 
-p.add_argument("--peft_type", type=str, default="no", choices=["no", "lora", "dora"], help="whether to use LoRA or DoRA; defaults to 'no'")
+p.add_argument("--peft_type", type=str, default="no", choices=["no", "lora", "dora", "adalora"], help="whether to use LoRA or DoRA; defaults to 'no'")
 p.add_argument("--lora_rank", type=int, default=8, help="rank for LoRA")
 p.add_argument("--lora_alpha", type=int, default=32, help="lora_alpha for LoRA")
 p.add_argument("--lora_dropout", type=float, default=0.1, help="dropout probability for LoRA")
 p.add_argument("--lora_target", type=str, default="no_qk", choices=["all", "no_qk", "no_v", "no_qkv"], help="target modules to apply LoRA; defaults to 'all'")
+p.add_argument("--adalora_init_rank", type=int, default=16, help="initial rank for AdaLoRA")
 
 l.add_argument("--learning_rate", type=float, default=4.5e-6, help="learning rate")
 l.add_argument("--lr_scheduler_type", type=str, default="cosine", choices=["constant", "linear", "cosine"], help="learning rate scheduler type; defaults to 'cosine'")
@@ -359,7 +361,7 @@ args = parser.parse_args()
 
 ### Setting Logger  
 
-output_dir = f"{args.output_dir}/{args.model}/{args.peft_type}"
+output_dir = f"{args.output_dir.rstrip("/")}/{args.model}/{args.peft_type}"
 if not os.path.isdir(output_dir):
     os.makedirs(output_dir, exist_ok=True)    
     
@@ -443,7 +445,7 @@ def get_trainable_parameters(model):
     return messages    
 
 
-def set_lora_config():
+def set_peft_config():
     
     target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
     if args.lora_target == "no_qkv":
@@ -455,25 +457,33 @@ def set_lora_config():
     else: # args.lora_target == all
         pass
     
-    lora_config_dict = {
+    peft_config_dict = {
         "use_dora": True if args.peft_type == "dora" else False,
         "r": args.lora_rank,
         "lora_alpha": args.lora_alpha,
         "lora_dropout": args.lora_dropout,
         "target_modules": target_modules
     }
+    if args.peft_type == "adalora":
+        peft_config_dict["init_r"] = args.adalora_init_rank
+        peft_config = AdaLoraConfig(
+            peft_type = "ADALORA",
+            task_type="CAUSAL_LM",
+            **peft_config_dict
+        )
+    else: 
+        peft_config = LoraConfig(
+            task_type="CAUSAL_LM",
+            **peft_config_dict
+        )
     
-    lora_config = LoraConfig(
-        task_type="CAUSAL_LM",
-        **lora_config_dict
-    )
-    
-    logger.debug("〓〓〓〓〓 LoRA Configuration 〓〓〓〓〓")
-    for k, v in lora_config_dict.items():
+    logger.debug("〓〓〓〓〓 PEFT Configuration 〓〓〓〓〓")
+    logger.debug(f"- peft type: {args.peft_type}")
+    for k, v in peft_config_dict.items():
         logger.debug(f"- {k}: {v}")
     logger.debug("〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓〓")
     
-    return lora_config
+    return peft_config
 
 
 def get_tokenizer(model_path):
@@ -495,7 +505,7 @@ def get_model(model_path, adapter_path, load_count):
     attn_implementation = "eager" if model_path == "google/gemma-2-9b-it" else "flash_attention_2"
     model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        device_map="balanced",
+        device_map="auto",
         torch_dtype=torch.bfloat16,
         trust_remote_code=True,
         attn_implementation=attn_implementation
@@ -504,8 +514,8 @@ def get_model(model_path, adapter_path, load_count):
 
     if load_count < 2:        
         if not args.peft_type == "no":
-            logger.info("Setting LoRA configuration")
-            peft_config = set_lora_config()
+            logger.info("Setting PEFT configuration")
+            peft_config = set_peft_config()
             logger.info("Building PEFT model")
             model = get_peft_model(model, peft_config=peft_config) 
             
@@ -665,7 +675,12 @@ def formatting_func(example):
         아래 질문을 한국어로 정확하게 답변해주세요. **질문**: {}<|im_end|>
         <|im_start|>system
         {}<|im_end|>
-        <|endoftext|>"""
+        <|endoftext|>""",
+        "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct": """
+        [|system|]당신의 역할은 한국어로 답변하는 **한국어 AI 어시트턴트**입니다. 주어진 질문에 대해 한국어로 답변해주세요.[|endofturn|]
+        [|user|]아래 질문을 한국어로 정확하게 답변해주세요. **질문**: {}[|endofturn|]
+        [|assistant|]{}[|endofturn|]
+        """
     }
     template = model2template[model.name_or_path].strip()
     
@@ -706,7 +721,8 @@ def main():
         "llama3-8b": "meta-llama/Meta-Llama-3-8B-Instruct",
         "llama3.1-8b": "meta-llama/Meta-Llama-3.1-8B-Instruct",
         "gemma2-9b": "google/gemma-2-9b-it",
-        "qwen2-7b": "Qwen/Qwen2-7B-Instruct"
+        "qwen2-7b": "Qwen/Qwen2-7B-Instruct",
+        "exaone3-7.8b": "LGAI-EXAONE/EXAONE-3.0-7.8B-Instruct"
     }
     model_path = arg2model[args.model]    
     global tokenizer
@@ -757,7 +773,9 @@ def main():
 
         global model
         model = get_model(model_path, adapter_path, i+1)        
-
+        if args.peft_type == "adalora":
+            model.peft_config["default"].total_step = steps_list[i]
+            
         logger.info("Setting dataset")
         train_dataset = train_dataset_list[i]
         eval_dataset = eval_dataset_list[i if len(eval_dataset_list) > 1 else 0] 
